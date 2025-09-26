@@ -3,7 +3,8 @@ import numpy as np
 import os
 import logging
 from typing import Callable, Optional
-from watermark.tamper_detector import TamperDetector   # ✅ NEW IMPORT
+from watermark.tamper_detection import TamperDetector
+
 
 logger = logging.getLogger(__name__)
 
