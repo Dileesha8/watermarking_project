@@ -41,17 +41,7 @@ class VideoProcessor:
 
     def embed_watermark_in_video(self, input_path, output_path, watermark_text,
                                  strength, watermarker, progress_callback: Optional[Callable] = None):
-        """
-        Embed watermark + dynamic authentication code in a video file.
-
-        Args:
-            input_path: Path to input video
-            output_path: Path to output video
-            watermark_text: Base text to embed
-            strength: Watermark embedding strength
-            watermarker: DCTWatermark instance
-            progress_callback: Optional callback for progress updates
-        """
+        """Embed watermark + dynamic authentication code in a video file"""
         try:
             cap = cv2.VideoCapture(input_path)
             if not cap.isOpened():
@@ -73,7 +63,7 @@ class VideoProcessor:
                 return False
 
             frame_count = 0
-            td = TamperDetector(secret_key=b"your_strong_secret_key")  # ✅ NEW
+            td = TamperDetector(secret_key=b"your_strong_secret_key")
 
             while True:
                 ret, frame = cap.read()
@@ -82,7 +72,6 @@ class VideoProcessor:
 
                 frame_count += 1
                 try:
-                    # ✅ Generate frame-specific authentication code
                     auth_code = td.generate_auth_code(frame)
                     payload = f"{watermark_text}|{auth_code}"
                     watermarked_frame = watermarker.embed_watermark(frame, payload, strength)
@@ -110,10 +99,7 @@ class VideoProcessor:
 
     def extract_watermark_from_video(self, video_path, watermark_length, watermarker,
                                      frame_sample_rate=30):
-        """
-        Extract watermark from a video file by sampling frames.
-        Returns the most common watermark text.
-        """
+        """Extract watermark from a video file by sampling frames"""
         try:
             cap = cv2.VideoCapture(video_path)
             if not cap.isOpened():
@@ -133,7 +119,7 @@ class VideoProcessor:
                         if extracted_text and "Error" not in extracted_text:
                             extracted_texts.append(extracted_text)
                     except Exception as e:
-                        print(f"Error extracting from frame {frame_count}: {e}")
+                        logger.warning(f"Error extracting from frame {frame_count}: {e}")
 
                 frame_count += 1
                 if len(extracted_texts) >= 10:
@@ -149,7 +135,7 @@ class VideoProcessor:
                 return None
 
         except Exception as e:
-            print(f"Error extracting watermark from video: {e}")
+            logger.error(f"Error extracting watermark from video: {e}")
             return None
 
     def validate_video_file(self, file_path):
@@ -177,20 +163,37 @@ class VideoProcessor:
         except Exception:
             return 0
 
-    # ✅ NEW METHOD
     def verify_tamper(self, video_path, watermark_length, watermarker,
                       secret_key: bytes, auth_len: int = 16, frame_sample_rate: int = 30):
-        """
-        Verify tamper detection by sampling frames.
-        Returns: list of frame numbers where tampering is detected.
-        """
+        """Verify tamper detection by sampling frames"""
         td = TamperDetector(secret_key)
         tampered_frames = []
 
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
+            logger.error(f"Could not open video file: {video_path}")
             return None
 
         frame_id = 0
         while True:
-            ret, frame = cap.r
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            if frame_id % frame_sample_rate == 0:
+                try:
+                    extracted_text = watermarker.extract_watermark(frame, watermark_length)
+                    if extracted_text and "|" in extracted_text:
+                        wm_text, auth_code = extracted_text.split("|")
+                        expected_code = td.generate_auth_code(frame, length=auth_len)
+                        if auth_code != expected_code:
+                            tampered_frames.append(frame_id)
+                except Exception as e:
+                    logger.warning(f"Error verifying frame {frame_id}: {e}")
+                    tampered_frames.append(frame_id)
+
+            frame_id += 1
+
+        cap.release()
+        logger.info(f"Tamper verification completed. Tampered frames: {tampered_frames}")
+        return tampered_frames
